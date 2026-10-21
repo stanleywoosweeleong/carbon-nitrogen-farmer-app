@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import {cnDecision} from './dist/cn-decision.mjs';
+assert.equal(cnDecision({mode:'elements',carbon:45,nitrogen:2.5,unit:'percent'}).ratio,18);
+assert.equal(cnDecision({mode:'none'}).ratio,null);
+assert.throws(()=>cnDecision({mode:'elements',carbon:45,nitrogen:0,unit:'percent'}));
+assert.equal(cnDecision({mode:'ratio',cn:30,crop:'mango',organ:'reproductive-bud',basis:'总碳 / 总氮，干基质量比'}).ref,'F4');
+assert.equal(cnDecision({mode:'ratio',cn:30,crop:'mango',organ:'vegetative-bud',basis:'总碳 / 总氮，干基质量比'}).ref,null);
+import {assessFlower,cropProfiles} from './dist/flower.mjs';
+import {actionPlan,cropTasks} from './dist/actions.mjs';
+import {additionalCrops,practicalSources} from './dist/catalog.mjs';
+const fullCatalog={...cropProfiles,...additionalCrops};
+assert.equal(Object.keys(fullCatalog).filter(k=>k!=='other').length,14);
+assert.equal(Object.keys(cropTasks).length,15);
+const uncertain={stage:'pre',adult:'unknown',health:'unknown',flush:'unknown',season:'unknown',cultivar:'',location:''};
+for(const crop of Object.keys(fullCatalog)){
+ const plan=actionPlan({...uncertain,crop});
+ assert.equal(plan.actions.length,3);assert.ok(plan.review.length>10);assert.ok(plan.actions.every(s=>s.length>10));
+ if(crop!=='other')assert.ok(plan.refs.length);
+}
+assert.match(actionPlan({...uncertain,crop:'durian',health:'poor'}).title,/健康/);
+assert.match(actionPlan({...uncertain,crop:'strawberry',flush:'young'}).title,/品种类型/);
+assert.match(actionPlan({...uncertain,crop:'dragonfruit',stage:'bloom'}).actions[0],/花粉/);
+assert.match(actionPlan({...uncertain,crop:'mango',cn:40}).cn,/不能/);
+assert.match(actionPlan({...uncertain,crop:'other'}).title,/暂不能/);
+assert.ok(practicalSources.every(s=>s.url.startsWith('https://')&&s.scope));
+import {moistureFromWeights} from './dist/core.mjs';
+assert.equal(moistureFromWeights(20,120,50).moisture,70);
+assert.throws(()=>moistureFromWeights(20,120,130));
+const complete={crop:'mango',stage:'pre',adult:'yes',flush:'mature',health:'good',season:'yes',nitrogen:'documented',cultivar:'Keitt',location:'Tropics'};
+assert.equal(assessFlower({...complete,cn:40}).kind,'review');
+assert.equal(assessFlower({...complete,flush:'young'}).kind,'attention');
+assert.equal(assessFlower({...complete,stage:'bloom'}).kind,'stage');
+assert.equal(assessFlower({...complete,cultivar:''}).kind,'unknown');
+assert.equal(Object.keys(cropProfiles).length,5);
+import {tissue,mixture,addition,molecule,csv} from './dist/core.mjs';
+const near=(a,b,t=1e-8)=>assert.ok(Math.abs(a-b)<t,`${a} ≠ ${b}`);
+near(tissue(45,2.5).mass,18);near(tissue(450,25,'gkg').mass,18);
+near(tissue(45,2.5).atomic,18*14.007/12.011);
+for(const [c,n] of [[45,0],[NaN,2],[-1,2],[99,2],[Infinity,1]])assert.throws(()=>tissue(c,n));
+const grass={name:'grass',mass:10,moisture:77,c:45,n:2.4},leaves={name:'leaves',mass:3.5,moisture:35,c:50,n:.75};
+const mix=mixture([grass,leaves]);near(mix.c,2.1725);near(mix.n,.0722625);near(mix.ratio,30.063999308078187,1e-4);near(mix.moisture,66.11111111111111);
+const base=mixture([grass]),x=addition(base,leaves,30);near(x,3.4741258741258743,1e-7);near(mixture([grass,{...leaves,mass:x}]).ratio,30);
+assert.throws(()=>addition(base,grass,30));assert.throws(()=>addition(base,leaves,10));assert.throws(()=>mixture([]));assert.throws(()=>mixture([{...grass,mass:0}]));assert.throws(()=>mixture([{...grass,c:99,n:2.4}]));
+near(addition(mix,leaves,mix.ratio),0);
+const wet=mixture([{...grass,mass:10,moisture:77}]);const dry=mixture([{...grass,mass:2.3,moisture:0}]);near(wet.ratio,dry.ratio);near(wet.c,dry.c);
+near(molecule(5,1).atomic,5);near(molecule(6,4).mass,6*12.011/(4*14.007));assert.ok(csv([['=cmd','a"b']]).includes("'=cmd"));assert.ok(csv([['a"b']]).includes('a""b'));
+console.log('Passed: tissue units/validation, atomic conversion, dry-mass balance, Cornell example, solver reachability, water invariance, CSV escaping.');
+
